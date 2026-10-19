@@ -38,7 +38,7 @@ export function installerSiblingFiles(binary: string, platform: NodeJS.Platform)
   const names =
     platform === "win32"
       ? ["altimate.exe", "altimate-code.cmd", "altimate-code", "altimate-code.exe", "altimate-code.exe.old"]
-      : ["altimate", "altimate-code"]
+      : ["altimate", "altimate-code", "altimate-code.exe"]
   // Windows file names are case-insensitive; POSIX ones are not.
   const running = platform === "win32" ? paths.basename(binary).toLowerCase() : paths.basename(binary)
   return names.filter((name) => name !== running).map((name) => paths.join(binDir, name))

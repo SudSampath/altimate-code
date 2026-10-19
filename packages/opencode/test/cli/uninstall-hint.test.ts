@@ -5,6 +5,8 @@ describe("uninstall — installer files beside the binary", () => {
   test("names the alias next to a standalone unix install", () => {
     expect(installerSiblingFiles("/home/u/.altimate/bin/altimate", "linux")).toEqual([
       "/home/u/.altimate/bin/altimate-code",
+      // `install --binary altimate.exe` links this name on any OS
+      "/home/u/.altimate/bin/altimate-code.exe",
     ])
   })
 
@@ -30,6 +32,7 @@ describe("uninstall — installer files beside the binary", () => {
     expect(installerSiblingFiles("/home/u/.altimate/bin/ALTIMATE", "linux")).toEqual([
       "/home/u/.altimate/bin/altimate",
       "/home/u/.altimate/bin/altimate-code",
+      "/home/u/.altimate/bin/altimate-code.exe",
     ])
   })
 
