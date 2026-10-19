@@ -41,10 +41,12 @@ function Write-Muted($msg) { Write-Host $msg -ForegroundColor DarkGray }
 function Write-Err($msg) { Write-Host "error: $msg" -ForegroundColor Red }
 
 # Expose `altimate-code` next to altimate.exe, matching npm, Homebrew and AUR,
-# which all ship both names. A .cmd shim instead of a copy or link: it follows
-# the binary across upgrades (which rename the running exe aside) and needs no
-# symlink privilege. A stray altimate-code.exe would win over the shim through
-# PATHEXT order and could run a stale build, so it is moved out of the way.
+# which all ship both names. Shims instead of a copy or link: they follow the
+# binary across upgrades (which rename the running exe aside) and need no symlink
+# privilege. cmd.exe and PowerShell resolve the .cmd; Git Bash and other MSYS
+# shells only resolve the extensionless script, the same pair npm writes. A stray
+# altimate-code.exe would win over the .cmd through PATHEXT order and could run a
+# stale build, so it is moved out of the way.
 #
 # Best-effort: a failure here warns and never aborts the install.
 function Install-Alias {
@@ -53,15 +55,32 @@ function Install-Alias {
   try {
     if (-not (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, "altimate.exe")) -PathType Leaf)) { return }
 
-    # Shim first: if it cannot be written, an existing altimate-code.exe stays usable.
-    $shim = "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-    [IO.File]::WriteAllText([IO.Path]::Combine($Dir, "altimate-code.cmd"), $shim, [Text.Encoding]::ASCII)
+    $shadowingExe = [IO.Path]::Combine($Dir, "altimate-code.exe")
+    Remove-Item -LiteralPath "$shadowingExe.old" -Force -ErrorAction SilentlyContinue
 
-    $staleExe = [IO.Path]::Combine($Dir, "altimate-code.exe")
-    if (Test-Path -LiteralPath $staleExe -PathType Leaf) {
-      try { Remove-Item -LiteralPath $staleExe -Force } catch {
-        Remove-Item -LiteralPath "$staleExe.old" -Force -ErrorAction SilentlyContinue
-        Move-Item -LiteralPath $staleExe -Destination "$staleExe.old" -Force
+    $cmdShim = [IO.Path]::Combine($Dir, "altimate-code.cmd")
+    $shShim = [IO.Path]::Combine($Dir, "altimate-code")
+    # Replace an existing file or link instead of writing through it, so a link at a
+    # shim's path can never overwrite the file it points to. GetAttributes does not
+    # follow links, so a dangling one is caught too. A real directory is left alone
+    # and the write below fails into the catch.
+    foreach ($path in @($cmdShim, $shShim)) {
+      $attrs = $null
+      try { $attrs = [IO.File]::GetAttributes($path) } catch {}
+      if ($null -eq $attrs) { continue }
+      $isDir = [bool]($attrs -band [IO.FileAttributes]::Directory)
+      if ($isDir -and ($attrs -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path) }
+      elseif (-not $isDir) { [IO.File]::Delete($path) }
+    }
+
+    # Shims first: if one cannot be written, an existing altimate-code.exe stays usable.
+    [IO.File]::WriteAllText($cmdShim, "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n", [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText($shShim, "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n", [Text.Encoding]::ASCII)
+
+    if (Test-Path -LiteralPath $shadowingExe -PathType Leaf) {
+      try { Remove-Item -LiteralPath $shadowingExe -Force } catch {
+        Remove-Item -LiteralPath "$shadowingExe.old" -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $shadowingExe -Destination "$shadowingExe.old" -Force
       }
     }
   } catch {
@@ -227,8 +246,8 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 # ---------------------------------------------------------------------------
 # Skip if the requested version is already installed
 # ---------------------------------------------------------------------------
-# Probe both names: the standalone install ships `altimate`, but an npm install
-# also exposes the `altimate-code` alias.
+# Probe both names: either can be the only one on PATH (a standalone install from
+# before the `altimate-code` shims, or a package manager that exposes one name).
 $probe = $null
 foreach ($name in @("altimate", "altimate-code")) {
   $cmd = Get-Command $name -ErrorAction SilentlyContinue

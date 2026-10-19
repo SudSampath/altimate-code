@@ -462,7 +462,8 @@ download_and_install() {
 
 # Expose `altimate-code` next to the installed binary, matching npm, Homebrew and
 # AUR, which all ship both names. A relative symlink keeps following the binary
-# across upgrades. `ln -sfn` also replaces a pre-v0.7.1 standalone `altimate-code`
+# across upgrades (Git Bash may make a copy instead, which every installer run
+# replaces). `ln -sfn` also replaces a pre-v0.7.1 standalone `altimate-code`
 # binary, so that name can never run a stale build, and replaces a link to a
 # directory instead of writing into that directory.
 link_alias() {

@@ -42,7 +42,7 @@ function runInstaller(home: string, binaryName = "altimate") {
   writeFileSync(fakeBin, '#!/bin/sh\necho fake-altimate "$@"\n', { mode: 0o755 })
   const res = spawnSync("bash", [INSTALL_SH_PATH, "--binary", fakeBin, "--no-modify-path"], {
     encoding: "utf-8",
-    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "data") },
+    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "data"), GITHUB_ACTIONS: "" },
   })
   return { code: res.status ?? -1, stderr: res.stderr ?? "", bin: join(home, ".altimate", "bin") }
 }
@@ -107,11 +107,66 @@ describe("install — altimate-code alias, executed", () => {
       writeFileSync(join(stubs, "curl"), "#!/bin/sh\necho 200\n", { mode: 0o755 })
       const res = spawnSync("bash", [INSTALL_SH_PATH, "--version", "9.9.9", "--no-modify-path"], {
         encoding: "utf-8",
-        env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "data"), PATH: `${stubs}:${bin}:${process.env.PATH}` },
+        env: {
+          ...process.env,
+          HOME: home,
+          XDG_DATA_HOME: join(home, "data"),
+          GITHUB_ACTIONS: "",
+          PATH: `${stubs}:${bin}:${process.env.PATH}`,
+        },
       })
       expect(res.stdout).toContain("already installed")
       expect(res.status).toBe(0)
       expect(readlinkSync(join(bin, "altimate-code"))).toBe("altimate")
+    })
+  })
+
+  testUnlessWindows("a downloaded release gets the alias", () => {
+    withHome((home) => {
+      const stubs = join(home, "stubs")
+      const pkg = join(home, "pkg")
+      mkdirSync(stubs)
+      mkdirSync(pkg)
+      writeFileSync(join(pkg, "altimate"), '#!/bin/sh\necho downloaded "$@"\n', { mode: 0o755 })
+      // Linux releases ship .tar.gz, every other target .zip (see `archive_ext` in install).
+      const archive = join(home, "release")
+      const pack =
+        process.platform === "linux"
+          ? spawnSync("tar", ["-czf", archive, "-C", pkg, "altimate"])
+          : spawnSync("zip", ["-q", archive, "altimate"], { cwd: pkg })
+      expect(pack.status).toBe(0)
+      // Offline curl: the release-exists probe gets 200, the download gets the local
+      // archive, and checksums.txt is missing (the installer then skips verification).
+      writeFileSync(
+        join(stubs, "curl"),
+        [
+          "#!/bin/sh",
+          'out=""; prev=""',
+          'for a in "$@"; do',
+          '  [ "$a" = "-w" ] && { echo 200; exit 0; }',
+          '  [ "$prev" = "-o" ] && out="$a"; prev="$a"',
+          "done",
+          `[ -n "$out" ] && exec cp "${archive}${process.platform === "linux" ? "" : ".zip"}" "$out"`,
+          "exit 22",
+          "",
+        ].join("\n"),
+        { mode: 0o755 },
+      )
+      const res = spawnSync("bash", [INSTALL_SH_PATH, "--version", "0.0.0-alias-test", "--no-modify-path"], {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: home,
+          XDG_DATA_HOME: join(home, "data"),
+          GITHUB_ACTIONS: "",
+          PATH: `${stubs}:${process.env.PATH}`,
+        },
+      })
+      expect(res.stderr).not.toMatch(/syntax error|command not found/)
+      expect(res.status).toBe(0)
+      const alias = join(home, ".altimate", "bin", "altimate-code")
+      expect(readlinkSync(alias)).toBe("altimate")
+      expect(spawnSync(alias, ["--version"], { encoding: "utf-8" }).stdout.trim()).toBe("downloaded --version")
     })
   })
 

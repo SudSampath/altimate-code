@@ -285,9 +285,21 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
     const binDir = path.dirname(targets.binary)
     // altimate_change start — the installers also place an `altimate-code` alias beside the binary:
-    // install.ps1 writes a .cmd shim, the bash installer under Git Bash links an .exe
-    const aliases = process.platform === "win32" ? ["altimate-code.cmd", "altimate-code.exe"] : ["altimate-code"]
-    for (const alias of aliases) prompts.log.info(`  rm -f "${path.join(binDir, alias)}"`)
+    // install.ps1 writes .cmd and extensionless shims, the bash installer under Git Bash links (or
+    // copies) an .exe. Only in the installers' own ~/.altimate/bin, so an unrelated `altimate-code`
+    // in a shared directory such as ~/.local/bin is never named for removal.
+    if (path.basename(path.dirname(binDir)) === ".altimate") {
+      const aliases =
+        process.platform === "win32" ? ["altimate-code.cmd", "altimate-code", "altimate-code.exe"] : ["altimate-code"]
+      for (const alias of aliases) {
+        const aliasPath = path.join(binDir, alias)
+        const present = await fs.lstat(aliasPath).then(
+          () => true,
+          () => false,
+        )
+        if (present) prompts.log.info(`  rm -f "${aliasPath}"`)
+      }
+    }
     // altimate_change end
     if (binDir.includes(".opencode")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)

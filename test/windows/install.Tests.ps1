@@ -356,6 +356,45 @@ Describe "install.ps1 Install-Alias" {
     $shim | Should -Be "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
   }
 
+  It "writes an extensionless shim for Git Bash that forwards to altimate.exe" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    Install-Alias -Dir $script:Sandbox
+
+    $shim = [IO.File]::ReadAllText([IO.Path]::Combine($script:Sandbox, "altimate-code"))
+    $shim | Should -Be "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n"
+  }
+
+  It "runs altimate.exe through the .cmd shim with its arguments and exit code" {
+    # cmd.exe stands in for altimate.exe: a real executable whose output and exit
+    # code are driven entirely by the forwarded arguments.
+    Copy-Item -LiteralPath $env:ComSpec -Destination ([IO.Path]::Combine($script:Sandbox, "altimate.exe"))
+    Install-Alias -Dir $script:Sandbox
+    $shim = [IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")
+
+    (& $shim /c echo forwarded) | Should -Be "forwarded"
+    & $shim /c exit 7
+    $LASTEXITCODE | Should -Be 7
+  }
+
+  It "replaces a hard link at the shim path without writing through it" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    $outside = [IO.Path]::Combine($script:Sandbox, "outside.txt")
+    Set-Content -Path $outside -Value "untouched" -NoNewline
+    New-Item -ItemType HardLink -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) -Target $outside | Out-Null
+    Install-Alias -Dir $script:Sandbox
+
+    [IO.File]::ReadAllText($outside) | Should -Be "untouched"
+    [IO.File]::ReadAllText([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Should -Match "altimate.exe"
+  }
+
+  It "cleans up an altimate-code.exe.old left by an earlier run" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe.old")) -Value "old" -NoNewline
+    Install-Alias -Dir $script:Sandbox
+
+    Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe.old")) | Should -BeFalse
+  }
+
   It "removes a stale altimate-code.exe that would shadow the shim" {
     Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
     Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe")) -Value "stale" -NoNewline
@@ -368,6 +407,7 @@ Describe "install.ps1 Install-Alias" {
   It "creates nothing when altimate.exe is not installed" {
     Install-Alias -Dir $script:Sandbox
     Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Should -BeFalse
+    Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code")) | Should -BeFalse
   }
 
   It "keeps an existing altimate-code.exe when the shim cannot be written" {
