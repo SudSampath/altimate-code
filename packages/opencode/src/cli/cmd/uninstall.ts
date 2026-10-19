@@ -284,6 +284,10 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
+    // altimate_change start — the installers also place an `altimate-code` alias beside the binary
+    const alias = path.join(binDir, process.platform === "win32" ? "altimate-code.cmd" : "altimate-code")
+    prompts.log.info(`  rm -f "${alias}"`)
+    // altimate_change end
     if (binDir.includes(".opencode")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }

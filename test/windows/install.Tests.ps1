@@ -320,3 +320,60 @@ Describe "install.ps1 Write-InstallMarker" {
     $ErrorActionPreference | Should -Be "Stop"
   }
 }
+
+Describe "install.ps1 Install-Alias" {
+  BeforeAll {
+    $src = Get-Content -Raw $script:InstallScript
+    $tokens = $null; $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$tokens, [ref]$errors)
+    $def = $ast.Find({
+      param($n)
+      $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Install-Alias"
+    }, $true)
+    if (-not $def) { throw "Install-Alias not found in install.ps1" }
+    . ([ScriptBlock]::Create($def.Extent.Text))
+    function Write-Muted($msg) { }
+
+    # Same reason as Write-InstallMarker: the installer runs under "Stop".
+    $ErrorActionPreference = "Stop"
+    $script:ErrorActionPreference = "Stop"
+  }
+
+  BeforeEach {
+    $script:Sandbox = Join-Path ([IO.Path]::GetTempPath()) ("alias-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $script:Sandbox | Out-Null
+  }
+
+  AfterEach {
+    Remove-Item -Recurse -Force $script:Sandbox -ErrorAction SilentlyContinue
+  }
+
+  It "writes an altimate-code.cmd shim that forwards to altimate.exe" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    Install-Alias -Dir $script:Sandbox
+
+    $shim = [IO.File]::ReadAllText([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd"))
+    $shim | Should -Be "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+  }
+
+  It "removes a stale altimate-code.exe that would shadow the shim" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe")) -Value "stale" -NoNewline
+    Install-Alias -Dir $script:Sandbox
+
+    Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe")) | Should -BeFalse
+    Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Should -BeTrue
+  }
+
+  It "creates nothing when altimate.exe is not installed" {
+    Install-Alias -Dir $script:Sandbox
+    Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Should -BeFalse
+  }
+
+  It "does not throw when the shim cannot be written" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    New-Item -ItemType Directory -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Out-Null
+
+    { Install-Alias -Dir $script:Sandbox } | Should -Not -Throw
+  }
+}

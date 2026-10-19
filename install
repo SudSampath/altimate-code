@@ -275,6 +275,8 @@ check_version() {
         # treat an empty==empty as "already installed" — fall through and reinstall.
         if [ -n "$specific_version" ] && [[ "$installed_version" == "$specific_version" ]]; then
             print_message info "${MUTED}Version ${NC}$specific_version${MUTED} already installed${NC}"
+            # A standalone install from before the alias existed still gets it.
+            link_alias "$binary_name"
             exit 0
         elif [ -n "$installed_version" ]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
@@ -453,16 +455,33 @@ download_and_install() {
     mv "$tmp_dir/$binary_name" "${INSTALL_DIR}/$binary_name"
     chmod 755 "${INSTALL_DIR}/$binary_name"
 
-    # If the previous install dropped `altimate-code` here (pre-v0.7.1 curl
-    # install), remove it so users don't end up running a stale binary by
-    # name. The npm/Homebrew/AUR paths still expose both names; only the
-    # standalone $INSTALL_DIR has the rename collapse.
-    if [ "$os" != "windows" ] && [ -f "${INSTALL_DIR}/altimate-code" ]; then
-        rm -f "${INSTALL_DIR}/altimate-code"
-        print_message info "${MUTED}Removed stale ${NC}altimate-code${MUTED} from ${NC}$INSTALL_DIR${MUTED} (renamed to altimate in v0.7.1)${NC}"
-    fi
+    link_alias "$binary_name"
 
     rm -rf "$tmp_dir"
+}
+
+# Expose `altimate-code` next to the installed binary, matching npm, Homebrew and
+# AUR, which all ship both names. A relative symlink keeps following the binary
+# across upgrades. `ln -sf` also replaces a pre-v0.7.1 standalone `altimate-code`
+# binary, so that name can never run a stale build.
+link_alias() {
+    local target="$1"
+    local alias_name
+    case "$target" in
+        altimate) alias_name="altimate-code" ;;
+        altimate.exe) alias_name="altimate-code.exe" ;;
+        *) return 0 ;;
+    esac
+    [ -f "${INSTALL_DIR}/$target" ] || return 0
+
+    if [ -d "${INSTALL_DIR}/$alias_name" ] && [ ! -L "${INSTALL_DIR}/$alias_name" ]; then
+        print_message warning "${MUTED}Skipped the ${NC}$alias_name${MUTED} alias: ${NC}${INSTALL_DIR}/$alias_name${MUTED} is a directory${NC}"
+        return 0
+    fi
+
+    if ! (cd "$INSTALL_DIR" && ln -sf "$target" "$alias_name"); then
+        print_message warning "${MUTED}Could not create the ${NC}$alias_name${MUTED} alias in ${NC}$INSTALL_DIR"
+    fi
 }
 
 install_from_binary() {
@@ -479,12 +498,14 @@ install_from_binary() {
     if [ -f "$dest_path" ] && [ "$binary_path" -ef "$dest_path" ]; then
         print_message info "${MUTED}Source and destination are the same file — nothing to do: ${NC}$dest_path"
         chmod 755 "$dest_path"
+        link_alias "$dest_name"
         return 0
     fi
 
     print_message info "\n${MUTED}Installing ${NC}$dest_name ${MUTED}from: ${NC}$binary_path"
     cp "$binary_path" "$dest_path"
     chmod 755 "$dest_path"
+    link_alias "$dest_name"
 }
 
 # Write the same post-install marker that npm's postinstall.mjs writes, so the
