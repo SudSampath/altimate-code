@@ -261,8 +261,12 @@ if ($probe) {
   try { $installedVersion = (& $probe --version 2>$null | Select-Object -First 1).ToString().Trim() } catch {}
   if ($installedVersion -eq $specificVersion) {
     Write-Muted "Version $specificVersion already installed"
-    # A standalone install from before the alias existed still gets it.
-    Install-Alias -Dir $InstallDir
+    # A standalone install from before the alias existed still gets it, but only when
+    # the matching binary is the one in $InstallDir, so the alias never runs a different
+    # version than the one just checked.
+    if ([IO.Path]::GetDirectoryName($probe) -eq $InstallDir) {
+      Install-Alias -Dir $InstallDir
+    }
     exit 0
   } elseif ($installedVersion) {
     Write-Muted "Installed version: $installedVersion."

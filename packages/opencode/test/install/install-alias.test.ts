@@ -121,6 +121,35 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
+  testUnlessWindows("the already-installed exit leaves the alias alone when the match is elsewhere on PATH", () => {
+    withHome((home) => {
+      const bin = join(home, ".altimate", "bin")
+      const other = join(home, "other")
+      const stubs = join(home, "stubs")
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(other)
+      mkdirSync(stubs)
+      // The matching version comes from another install earlier on PATH; the standalone
+      // binary is older, so an alias to it would run a different version.
+      writeFileSync(join(other, "altimate"), "#!/bin/sh\necho 9.9.9\n", { mode: 0o755 })
+      writeFileSync(join(bin, "altimate"), "#!/bin/sh\necho 1.0.0\n", { mode: 0o755 })
+      writeFileSync(join(stubs, "curl"), "#!/bin/sh\necho 200\n", { mode: 0o755 })
+      const res = spawnSync("bash", [INSTALL_SH_PATH, "--version", "9.9.9", "--no-modify-path"], {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: home,
+          XDG_DATA_HOME: join(home, "data"),
+          GITHUB_ACTIONS: "",
+          PATH: `${stubs}:${other}:${bin}:${process.env.PATH}`,
+        },
+      })
+      expect(res.stdout).toContain("already installed")
+      expect(res.status).toBe(0)
+      expect(existsSync(join(bin, "altimate-code"))).toBe(false)
+    })
+  })
+
   testUnlessWindows("a downloaded release gets the alias", () => {
     withHome((home) => {
       const stubs = join(home, "stubs")
@@ -211,5 +240,9 @@ describe("install.ps1 — altimate-code alias", () => {
     expect(calls[0]).toBeGreaterThan(alreadyInstalled)
     expect(calls[0]).toBeLessThan(exitAfter)
     expect(calls[1]).toBeGreaterThan(INSTALL_PS1.indexOf("Install-Target -Baseline:$true"))
+    // The already-installed alias is only for a match found in $InstallDir itself.
+    const guard = INSTALL_PS1.indexOf("if ([IO.Path]::GetDirectoryName($probe) -eq $InstallDir) {")
+    expect(guard).toBeGreaterThan(alreadyInstalled)
+    expect(guard).toBeLessThan(calls[0])
   })
 })

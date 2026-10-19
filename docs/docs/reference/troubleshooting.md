@@ -10,7 +10,7 @@ description: "Fix common Altimate Code installation and runtime issues including
 
 **Symptoms:** `altimate-code: command not found` after running `curl -fsSL https://www.altimate.sh/install | bash`.
 
-As of v0.7.1 the curl-installed binary is named `altimate`, and installers from before the `altimate-code` alias was added put only that name on PATH. Re-run the installer — it adds `altimate-code` next to `altimate` in `~/.altimate/bin` — or call `altimate` directly:
+As of v0.7.1 the curl-installed binary is named `altimate`, and curl installs from v0.7.1 until the `altimate-code` alias was added put only that name on PATH (v0.7.0 and earlier installed `altimate-code` under `~/.altimate-code/bin` instead). Re-run the installer — it adds `altimate-code` next to `altimate` in `~/.altimate/bin` — or call `altimate` directly:
 
 ```bash
 # Before (v0.7.0 and earlier curl install):

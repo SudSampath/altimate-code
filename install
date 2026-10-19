@@ -275,8 +275,12 @@ check_version() {
         # treat an empty==empty as "already installed" — fall through and reinstall.
         if [ -n "$specific_version" ] && [[ "$installed_version" == "$specific_version" ]]; then
             print_message info "${MUTED}Version ${NC}$specific_version${MUTED} already installed${NC}"
-            # A standalone install from before the alias existed still gets it.
-            link_alias "$binary_name"
+            # A standalone install from before the alias existed still gets it, but only
+            # when the matching binary is the one in INSTALL_DIR, so the alias never runs a
+            # different version than the one just checked.
+            if [ "$(dirname "$(command -v "$probe")")" = "$INSTALL_DIR" ]; then
+                link_alias "$binary_name"
+            fi
             exit 0
         elif [ -n "$installed_version" ]; then
             print_message info "${MUTED}Installed version: ${NC}$installed_version."
