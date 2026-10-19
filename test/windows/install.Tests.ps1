@@ -436,6 +436,15 @@ Describe "install.ps1 Install-Alias" {
     Test-Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.exe")) | Should -BeTrue
   }
 
+  It "keeps the Git Bash shim when the .cmd shim cannot be written" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code")) -Value "previous" -NoNewline
+    New-Item -ItemType Directory -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Out-Null
+
+    { Install-Alias -Dir $script:Sandbox } | Should -Not -Throw
+    [IO.File]::ReadAllText([IO.Path]::Combine($script:Sandbox, "altimate-code")) | Should -Be "previous"
+  }
+
   It "does not throw when the shim cannot be written" {
     Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
     New-Item -ItemType Directory -Path ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Out-Null

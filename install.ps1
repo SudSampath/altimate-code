@@ -58,24 +58,27 @@ function Install-Alias {
     $shadowingExe = [IO.Path]::Combine($Dir, "altimate-code.exe")
     Remove-Item -LiteralPath "$shadowingExe.old" -Force -ErrorAction SilentlyContinue
 
-    $cmdShim = [IO.Path]::Combine($Dir, "altimate-code.cmd")
-    $shShim = [IO.Path]::Combine($Dir, "altimate-code")
-    # Replace an existing file or link instead of writing through it, so a link at a
-    # shim's path can never overwrite the file it points to. GetAttributes does not
-    # follow links, so a dangling one is caught too. A real directory is left alone
-    # and the write below fails into the catch.
-    foreach ($path in @($cmdShim, $shShim)) {
+    $shims = [ordered]@{
+      "altimate-code.cmd" = "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+      "altimate-code"     = "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n"
+    }
+    # Shims first: if one cannot be written, an existing altimate-code.exe stays usable.
+    # Each shim replaces an existing file or link instead of writing through it, so a link
+    # at its path can never overwrite the file it points to; GetAttributes does not follow
+    # links, so a dangling one is caught too. Each entry is replaced just before its own
+    # write, so a failure leaves the shims not yet reached as they were. A real directory
+    # is left alone and the write fails into the catch.
+    foreach ($name in $shims.Keys) {
+      $path = [IO.Path]::Combine($Dir, $name)
       $attrs = $null
       try { $attrs = [IO.File]::GetAttributes($path) } catch {}
-      if ($null -eq $attrs) { continue }
-      $isDir = [bool]($attrs -band [IO.FileAttributes]::Directory)
-      if ($isDir -and ($attrs -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path) }
-      elseif (-not $isDir) { [IO.File]::Delete($path) }
+      if ($null -ne $attrs) {
+        $isDir = [bool]($attrs -band [IO.FileAttributes]::Directory)
+        if ($isDir -and ($attrs -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path) }
+        elseif (-not $isDir) { [IO.File]::Delete($path) }
+      }
+      [IO.File]::WriteAllText($path, $shims[$name], [Text.Encoding]::ASCII)
     }
-
-    # Shims first: if one cannot be written, an existing altimate-code.exe stays usable.
-    [IO.File]::WriteAllText($cmdShim, "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n", [Text.Encoding]::ASCII)
-    [IO.File]::WriteAllText($shShim, "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n", [Text.Encoding]::ASCII)
 
     if (Test-Path -LiteralPath $shadowingExe -PathType Leaf) {
       try { Remove-Item -LiteralPath $shadowingExe -Force } catch {

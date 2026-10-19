@@ -13,6 +13,7 @@ describe("uninstall — installer files beside the binary", () => {
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.exe",
+      "C:\\Users\\u\\.altimate\\bin\\altimate-code.exe.old",
     ])
   })
 
@@ -21,11 +22,20 @@ describe("uninstall — installer files beside the binary", () => {
       "C:\\Users\\u\\.altimate\\bin\\altimate.exe",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code",
+      "C:\\Users\\u\\.altimate\\bin\\altimate-code.exe.old",
+    ])
+  })
+
+  test("matches the running name case-sensitively on POSIX", () => {
+    expect(installerSiblingFiles("/home/u/.altimate/bin/ALTIMATE", "linux")).toEqual([
+      "/home/u/.altimate/bin/altimate",
+      "/home/u/.altimate/bin/altimate-code",
     ])
   })
 
   test("names nothing outside the installers' own directory", () => {
     expect(installerSiblingFiles("/home/u/.local/bin/altimate", "linux")).toEqual([])
     expect(installerSiblingFiles("/home/u/.opencode/bin/altimate", "linux")).toEqual([])
+    expect(installerSiblingFiles("/home/u/.altimate/not-bin/altimate", "linux")).toEqual([])
   })
 })
