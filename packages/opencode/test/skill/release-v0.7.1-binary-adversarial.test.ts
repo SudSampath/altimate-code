@@ -96,7 +96,7 @@ describe("v0.7.1 PR #820 — install script: review-driven hardening", () => {
     // A pre-rename binary left in INSTALL_DIR must never run by name; the
     // forced symlink overwrites it with an alias to the fresh `altimate`.
     // Behavioural coverage lives in test/install/install-alias.test.ts.
-    expect(installScript).toContain(`ln -sf "$target" "$alias_name"`)
+    expect(installScript).toContain(`ln -sfn "$target" "$alias_name"`)
     expect(installScript).toContain('link_alias "$binary_name"')
   })
   test("tar/unzip extract only the expected binary member", () => {

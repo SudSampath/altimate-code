@@ -53,6 +53,10 @@ function Install-Alias {
   try {
     if (-not (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, "altimate.exe")) -PathType Leaf)) { return }
 
+    # Shim first: if it cannot be written, an existing altimate-code.exe stays usable.
+    $shim = "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
+    [IO.File]::WriteAllText([IO.Path]::Combine($Dir, "altimate-code.cmd"), $shim, [Text.Encoding]::ASCII)
+
     $staleExe = [IO.Path]::Combine($Dir, "altimate-code.exe")
     if (Test-Path -LiteralPath $staleExe -PathType Leaf) {
       try { Remove-Item -LiteralPath $staleExe -Force } catch {
@@ -60,9 +64,6 @@ function Install-Alias {
         Move-Item -LiteralPath $staleExe -Destination "$staleExe.old" -Force
       }
     }
-
-    $shim = "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-    [IO.File]::WriteAllText([IO.Path]::Combine($Dir, "altimate-code.cmd"), $shim, [Text.Encoding]::ASCII)
   } catch {
     Write-Muted "Could not create the altimate-code alias in ${Dir}: $($_.Exception.Message)"
   }

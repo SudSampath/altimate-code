@@ -11,8 +11,10 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { spawnSync } from "node:child_process"
@@ -22,7 +24,7 @@ import os from "os"
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..")
 const INSTALL_SH_PATH = join(REPO_ROOT, "install")
 const INSTALL_PS1 = readFileSync(join(REPO_ROOT, "install.ps1"), "utf-8")
-const shtest = process.platform === "win32" ? test.skip : test
+const testUnlessWindows = process.platform === "win32" ? test.skip : test
 
 function withHome(fn: (home: string) => void) {
   const home = mkdtempSync(join(os.tmpdir(), "install-alias-home-"))
@@ -46,7 +48,7 @@ function runInstaller(home: string, binaryName = "altimate") {
 }
 
 describe("install — altimate-code alias, executed", () => {
-  shtest("installs altimate-code as a relative link to altimate that runs it", () => {
+  testUnlessWindows("installs altimate-code as a relative link to altimate that runs it", () => {
     withHome((home) => {
       const { code, bin, stderr } = runInstaller(home)
       expect(stderr).not.toMatch(/syntax error|command not found/)
@@ -59,7 +61,7 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
-  shtest("replaces a stale altimate-code binary instead of leaving it on PATH", () => {
+  testUnlessWindows("replaces a stale altimate-code binary instead of leaving it on PATH", () => {
     withHome((home) => {
       const bin = join(home, ".altimate", "bin")
       mkdirSync(bin, { recursive: true })
@@ -71,7 +73,7 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
-  shtest("re-running the installer keeps a single working alias", () => {
+  testUnlessWindows("re-running the installer keeps a single working alias", () => {
     withHome((home) => {
       expect(runInstaller(home).code).toBe(0)
       const { code, bin } = runInstaller(home)
@@ -80,7 +82,40 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
-  shtest("a --binary with an unrelated name gets no alias", () => {
+  testUnlessWindows("replaces a link to a directory without writing into that directory", () => {
+    withHome((home) => {
+      const bin = join(home, ".altimate", "bin")
+      const elsewhere = join(home, "elsewhere")
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(elsewhere)
+      symlinkSync(elsewhere, join(bin, "altimate-code"))
+      const { code } = runInstaller(home)
+      expect(code).toBe(0)
+      expect(readlinkSync(join(bin, "altimate-code"))).toBe("altimate")
+      expect(readdirSync(elsewhere)).toEqual([])
+    })
+  })
+
+  testUnlessWindows("the already-installed exit still adds the alias", () => {
+    withHome((home) => {
+      const bin = join(home, ".altimate", "bin")
+      const stubs = join(home, "stubs")
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(stubs)
+      writeFileSync(join(bin, "altimate"), "#!/bin/sh\necho 9.9.9\n", { mode: 0o755 })
+      // The release-exists probe is the only network call on a pinned version.
+      writeFileSync(join(stubs, "curl"), "#!/bin/sh\necho 200\n", { mode: 0o755 })
+      const res = spawnSync("bash", [INSTALL_SH_PATH, "--version", "9.9.9", "--no-modify-path"], {
+        encoding: "utf-8",
+        env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "data"), PATH: `${stubs}:${bin}:${process.env.PATH}` },
+      })
+      expect(res.stdout).toContain("already installed")
+      expect(res.status).toBe(0)
+      expect(readlinkSync(join(bin, "altimate-code"))).toBe("altimate")
+    })
+  })
+
+  testUnlessWindows("a --binary with an unrelated name gets no alias", () => {
     withHome((home) => {
       const { code, bin } = runInstaller(home, "altimate-dev")
       expect(code).toBe(0)
@@ -91,16 +126,14 @@ describe("install — altimate-code alias, executed", () => {
 })
 
 describe("install.ps1 — altimate-code alias", () => {
+  // Install-Alias itself is executed by test/windows/install.Tests.ps1; this pins its call sites.
   test("installs the alias after the binary and on the already-installed exit", () => {
-    const calls = [...INSTALL_PS1.matchAll(/^\s*Install-Alias -Dir \$InstallDir$/gm)].map((m) => m.index!)
+    const calls = [...INSTALL_PS1.matchAll(/^\s*Install-Alias -Dir \$InstallDir\s*$/gm)].map((m) => m.index!)
     expect(calls.length).toBe(2)
-    const exit = INSTALL_PS1.indexOf('Write-Muted "Version $specificVersion already installed"')
-    expect(calls[0]).toBeGreaterThan(exit)
-    expect(calls[0]).toBeLessThan(INSTALL_PS1.indexOf("    exit 0", exit))
+    const alreadyInstalled = INSTALL_PS1.indexOf("already installed")
+    const exitAfter = INSTALL_PS1.slice(alreadyInstalled).search(/^\s*exit 0\b/m) + alreadyInstalled
+    expect(calls[0]).toBeGreaterThan(alreadyInstalled)
+    expect(calls[0]).toBeLessThan(exitAfter)
     expect(calls[1]).toBeGreaterThan(INSTALL_PS1.indexOf("Install-Target -Baseline:$true"))
-  })
-
-  test("the shim forwards arguments and the exit code to altimate.exe", () => {
-    expect(INSTALL_PS1).toContain('"@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"')
   })
 })
