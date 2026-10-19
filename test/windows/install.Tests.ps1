@@ -364,7 +364,8 @@ Describe "install.ps1 Install-Alias" {
     $shim | Should -Be "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n"
   }
 
-  It "runs altimate.exe through the .cmd shim with its arguments and exit code" {
+  # Needs cmd.exe; skipped when the suite runs under pwsh on macOS or Linux.
+  It "runs altimate.exe through the .cmd shim with its arguments and exit code" -Skip:($env:OS -ne "Windows_NT") {
     # cmd.exe stands in for altimate.exe: a real executable whose output and exit
     # code are driven entirely by the forwarded arguments.
     Copy-Item -LiteralPath $env:ComSpec -Destination ([IO.Path]::Combine($script:Sandbox, "altimate.exe"))
@@ -385,6 +386,22 @@ Describe "install.ps1 Install-Alias" {
 
     [IO.File]::ReadAllText($outside) | Should -Be "untouched"
     [IO.File]::ReadAllText([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) | Should -Match "altimate.exe"
+  }
+
+  It "replaces a junction or directory link at the shim path without touching its target" {
+    Set-Content -Path ([IO.Path]::Combine($script:Sandbox, "altimate.exe")) -Value "x" -NoNewline
+    $outsideDir = [IO.Path]::Combine($script:Sandbox, "outside")
+    New-Item -ItemType Directory -Path $outsideDir | Out-Null
+    Set-Content -Path ([IO.Path]::Combine($outsideDir, "keep.txt")) -Value "untouched" -NoNewline
+    # pwsh off Windows silently creates no junction; a directory symlink is the same case there.
+    $linkType = if ($env:OS -eq "Windows_NT") { "Junction" } else { "SymbolicLink" }
+    $link = [IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")
+    New-Item -ItemType $linkType -Path $link -Target $outsideDir | Out-Null
+    (Get-Item -LiteralPath $link -Force).LinkType | Should -Be $linkType
+    Install-Alias -Dir $script:Sandbox
+
+    [IO.File]::ReadAllText([IO.Path]::Combine($outsideDir, "keep.txt")) | Should -Be "untouched"
+    Test-Path -LiteralPath ([IO.Path]::Combine($script:Sandbox, "altimate-code.cmd")) -PathType Leaf | Should -BeTrue
   }
 
   It "cleans up an altimate-code.exe.old left by an earlier run" {

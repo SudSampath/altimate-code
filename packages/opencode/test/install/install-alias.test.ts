@@ -170,6 +170,27 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
+  testUnlessWindows("a Windows binary gets an altimate-code.exe alias", () => {
+    withHome((home) => {
+      const { code, bin } = runInstaller(home, "altimate.exe")
+      expect(code).toBe(0)
+      expect(readlinkSync(join(bin, "altimate-code.exe"))).toBe("altimate.exe")
+    })
+  })
+
+  testUnlessWindows("leaves a real directory at the alias path alone and still installs", () => {
+    withHome((home) => {
+      const bin = join(home, ".altimate", "bin")
+      mkdirSync(join(bin, "altimate-code"), { recursive: true })
+      const { code, stderr } = runInstaller(home)
+      expect(stderr).not.toMatch(/syntax error|command not found/)
+      expect(code).toBe(0)
+      expect(lstatSync(join(bin, "altimate-code")).isDirectory()).toBe(true)
+      expect(readdirSync(join(bin, "altimate-code"))).toEqual([])
+      expect(existsSync(join(bin, "altimate"))).toBe(true)
+    })
+  })
+
   testUnlessWindows("a --binary with an unrelated name gets no alias", () => {
     withHome((home) => {
       const { code, bin } = runInstaller(home, "altimate-dev")

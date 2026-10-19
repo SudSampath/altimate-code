@@ -22,6 +22,27 @@ interface RemovalTargets {
   binary: string | null
 }
 
+// altimate_change start — files the standalone installers place beside the running binary
+/**
+ * The other names the standalone installers put in ~/.altimate/bin next to `binary`: the
+ * `altimate-code` alias (install.ps1 writes .cmd and extensionless shims, the bash installer
+ * under Git Bash links or copies an .exe) and the canonical binary, each unless it is the one
+ * running (`binary` can be a copied alias). Empty outside ~/.altimate/bin, so an unrelated `altimate-code` in a shared
+ * directory such as ~/.local/bin is never named for removal.
+ */
+export function installerSiblingFiles(binary: string, platform: NodeJS.Platform): string[] {
+  const paths = platform === "win32" ? path.win32 : path.posix
+  const binDir = paths.dirname(binary)
+  if (paths.basename(paths.dirname(binDir)) !== ".altimate") return []
+  const names =
+    platform === "win32"
+      ? ["altimate.exe", "altimate-code.cmd", "altimate-code", "altimate-code.exe"]
+      : ["altimate", "altimate-code"]
+  const running = paths.basename(binary).toLowerCase()
+  return names.filter((name) => name !== running).map((name) => paths.join(binDir, name))
+}
+// altimate_change end
+
 export const UninstallCommand = {
   command: "uninstall",
   // altimate_change start — upstream_fix: branding regression in describe text
@@ -284,21 +305,13 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
     prompts.log.info(`  rm "${targets.binary}"`)
 
     const binDir = path.dirname(targets.binary)
-    // altimate_change start — the installers also place an `altimate-code` alias beside the binary:
-    // install.ps1 writes .cmd and extensionless shims, the bash installer under Git Bash links (or
-    // copies) an .exe. Only in the installers' own ~/.altimate/bin, so an unrelated `altimate-code`
-    // in a shared directory such as ~/.local/bin is never named for removal.
-    if (path.basename(path.dirname(binDir)) === ".altimate") {
-      const aliases =
-        process.platform === "win32" ? ["altimate-code.cmd", "altimate-code", "altimate-code.exe"] : ["altimate-code"]
-      for (const alias of aliases) {
-        const aliasPath = path.join(binDir, alias)
-        const present = await fs.lstat(aliasPath).then(
-          () => true,
-          () => false,
-        )
-        if (present) prompts.log.info(`  rm -f "${aliasPath}"`)
-      }
+    // altimate_change start — also name the installer's other files that exist beside the binary
+    for (const file of installerSiblingFiles(targets.binary, process.platform)) {
+      const present = await fs.lstat(file).then(
+        () => true,
+        () => false,
+      )
+      if (present) prompts.log.info(`  rm -f "${file}"`)
     }
     // altimate_change end
     if (binDir.includes(".opencode")) {
