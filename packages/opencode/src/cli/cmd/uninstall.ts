@@ -199,14 +199,16 @@ async function collectRemovalTargets(args: UninstallArgs, method: Installation.M
   const binary = method === "curl" ? process.execPath : null
   // altimate_change start — a real directory at one of those names is not the installer's (it
   // skips them), so it is left out
-  const installerFiles: string[] = []
-  for (const file of binary ? installerSiblingFiles(binary, process.platform) : []) {
-    const present = await fs.lstat(file).then(
-      (stat) => !stat.isDirectory(),
-      () => false,
-    )
-    if (present) installerFiles.push(file)
-  }
+  const candidates = binary ? installerSiblingFiles(binary, process.platform) : []
+  const present = await Promise.all(
+    candidates.map((file) =>
+      fs.lstat(file).then(
+        (stat) => !stat.isDirectory(),
+        () => false,
+      ),
+    ),
+  )
+  const installerFiles = candidates.filter((_, index) => present[index])
 
   return { directories, shellConfig, binary, installerFiles }
   // altimate_change end
