@@ -30,6 +30,12 @@ describe("uninstall — installer files beside the binary", () => {
     ])
   })
 
+  test("matches a differently cased install dir on Windows", () => {
+    expect(installerSiblingFiles("C:\\Users\\u\\.ALTIMATE\\BIN\\altimate.exe", "win32")).toContain(
+      "C:\\Users\\u\\.ALTIMATE\\BIN\\altimate-code.cmd",
+    )
+  })
+
   test("matches the running name case-sensitively on POSIX", () => {
     expect(installerSiblingFiles("/home/u/.altimate/bin/ALTIMATE", "linux")).toEqual([
       "/home/u/.altimate/bin/altimate",
@@ -48,17 +54,26 @@ describe("uninstall — installer files beside the binary", () => {
 describe("uninstall — removal commands", () => {
   test("Windows gets a PowerShell command that runs where install.ps1 does", () => {
     expect(removeFileCommand("C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd", "win32", true)).toBe(
-      'Remove-Item -LiteralPath "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd" -Force',
+      "Remove-Item -LiteralPath 'C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd' -Force",
     )
     expect(removeFileCommand("C:\\Users\\u\\.altimate\\bin\\altimate.exe", "win32")).toBe(
-      'Remove-Item -LiteralPath "C:\\Users\\u\\.altimate\\bin\\altimate.exe" -Force',
+      "Remove-Item -LiteralPath 'C:\\Users\\u\\.altimate\\bin\\altimate.exe' -Force",
     )
   })
 
   test("POSIX keeps rm, with -f only when asked", () => {
-    expect(removeFileCommand("/home/u/.altimate/bin/altimate", "linux")).toBe('rm "/home/u/.altimate/bin/altimate"')
+    expect(removeFileCommand("/home/u/.altimate/bin/altimate", "linux")).toBe("rm '/home/u/.altimate/bin/altimate'")
     expect(removeFileCommand("/home/u/.altimate/bin/altimate-code", "darwin", true)).toBe(
-      'rm -f "/home/u/.altimate/bin/altimate-code"',
+      "rm -f '/home/u/.altimate/bin/altimate-code'",
+    )
+  })
+
+  test("a path with $, backticks or quotes stays literal in either shell", () => {
+    expect(removeFileCommand("/home/o'neil $dev `x`/.altimate/bin/altimate", "linux")).toBe(
+      "rm '/home/o'\\''neil $dev `x`/.altimate/bin/altimate'",
+    )
+    expect(removeFileCommand("C:\\Users\\o'neil $dev\\.altimate\\bin\\altimate.exe", "win32")).toBe(
+      "Remove-Item -LiteralPath 'C:\\Users\\o''neil $dev\\.altimate\\bin\\altimate.exe' -Force",
     )
   })
 })

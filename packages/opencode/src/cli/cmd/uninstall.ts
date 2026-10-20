@@ -37,7 +37,9 @@ interface RemovalTargets {
 export function installerSiblingFiles(binary: string, platform: NodeJS.Platform): string[] {
   const paths = platform === "win32" ? path.win32 : path.posix
   const binDir = paths.dirname(binary)
-  if (paths.basename(binDir) !== "bin" || paths.basename(paths.dirname(binDir)) !== ".altimate") return []
+  // Windows file names are case-insensitive; POSIX ones are not.
+  const fold = (name: string) => (platform === "win32" ? name.toLowerCase() : name)
+  if (fold(paths.basename(binDir)) !== "bin" || fold(paths.basename(paths.dirname(binDir))) !== ".altimate") return []
   const names =
     platform === "win32"
       ? [
@@ -49,16 +51,18 @@ export function installerSiblingFiles(binary: string, platform: NodeJS.Platform)
           "altimate-code.exe.old",
         ]
       : ["altimate", "altimate-code", "altimate-code.exe"]
-  // Windows file names are case-insensitive; POSIX ones are not.
-  const running = platform === "win32" ? paths.basename(binary).toLowerCase() : paths.basename(binary)
+  const running = fold(paths.basename(binary))
   return names.filter((name) => name !== running).map((name) => paths.join(binDir, name))
 }
 
-/** A command that removes `file` in the shell the platform's installer runs in. */
+/**
+ * A command that removes `file` in the shell the platform's installer runs in. The path is a
+ * single-quoted literal, so `$`, backticks or quotes in it are never expanded.
+ */
 export function removeFileCommand(file: string, platform: NodeJS.Platform, force = false): string {
   // install.ps1 is a PowerShell one-liner; neither cmd.exe nor PowerShell runs `rm -f`.
-  if (platform === "win32") return `Remove-Item -LiteralPath "${file}" -Force`
-  return `rm${force ? " -f" : ""} "${file}"`
+  if (platform === "win32") return `Remove-Item -LiteralPath '${file.replaceAll("'", "''")}' -Force`
+  return `rm${force ? " -f" : ""} '${file.replaceAll("'", "'\\''")}'`
 }
 // altimate_change end
 
