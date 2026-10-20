@@ -278,7 +278,9 @@ check_version() {
             # A standalone install from before the alias existed still gets it, but only
             # when the matching binary is the one in INSTALL_DIR, so the alias never runs a
             # different version than the one just checked.
-            if [ "$(dirname "$(command -v "$probe")")" = "$INSTALL_DIR" ]; then
+            # -ef compares the directories themselves, so a PATH entry spelled differently
+            # (a symlinked HOME, a trailing slash) still matches.
+            if [ "$(dirname "$(command -v "$probe")")" -ef "$INSTALL_DIR" ]; then
                 link_alias "$binary_name"
             fi
             exit 0

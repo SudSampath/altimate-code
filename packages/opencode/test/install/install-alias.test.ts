@@ -150,6 +150,32 @@ describe("install — altimate-code alias, executed", () => {
     })
   })
 
+  testUnlessWindows("the already-installed exit matches the install dir through a symlinked PATH entry", () => {
+    withHome((home) => {
+      const bin = join(home, ".altimate", "bin")
+      const stubs = join(home, "stubs")
+      const linkedBin = join(home, "linked-bin")
+      mkdirSync(bin, { recursive: true })
+      mkdirSync(stubs)
+      symlinkSync(bin, linkedBin)
+      writeFileSync(join(bin, "altimate"), "#!/bin/sh\necho 9.9.9\n", { mode: 0o755 })
+      writeFileSync(join(stubs, "curl"), "#!/bin/sh\necho 200\n", { mode: 0o755 })
+      const res = spawnSync("bash", [INSTALL_SH_PATH, "--version", "9.9.9", "--no-modify-path"], {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: home,
+          XDG_DATA_HOME: join(home, "data"),
+          GITHUB_ACTIONS: "",
+          PATH: `${stubs}:${linkedBin}/:${process.env.PATH}`,
+        },
+      })
+      expect(res.stdout).toContain("already installed")
+      expect(res.status).toBe(0)
+      expect(readlinkSync(join(bin, "altimate-code"))).toBe("altimate")
+    })
+  })
+
   testUnlessWindows("a downloaded release gets the alias", () => {
     withHome((home) => {
       const stubs = join(home, "stubs")
@@ -241,7 +267,7 @@ describe("install.ps1 — altimate-code alias", () => {
     expect(calls[0]).toBeLessThan(exitAfter)
     expect(calls[1]).toBeGreaterThan(INSTALL_PS1.indexOf("Install-Target -Baseline:$true"))
     // The already-installed alias is only for a match found in $InstallDir itself.
-    const guard = INSTALL_PS1.indexOf("if ([IO.Path]::GetDirectoryName($probe) -eq $InstallDir) {")
+    const guard = INSTALL_PS1.indexOf("if (Test-PathInDir -Path $probe -Dir $InstallDir) {")
     expect(guard).toBeGreaterThan(alreadyInstalled)
     expect(guard).toBeLessThan(calls[0])
   })

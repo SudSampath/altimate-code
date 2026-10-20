@@ -20,14 +20,17 @@ interface RemovalTargets {
   directories: Array<{ path: string; label: string; keep: boolean }>
   shellConfig: string | null
   binary: string | null
+  // altimate_change start — installer files beside the binary that exist (see installerSiblingFiles)
+  installerFiles: string[]
+  // altimate_change end
 }
 
 // altimate_change start — files the standalone installers place beside the running binary
 /**
  * The other names the standalone installers put in ~/.altimate/bin next to `binary`: the
- * `altimate-code` alias (install.ps1 writes .cmd and extensionless shims and may leave an
- * .exe.old aside, the bash installer under Git Bash links or copies an .exe) and the canonical
- * binary, each unless it is the one running (`binary` can be a copied alias). Empty outside
+ * `altimate-code` alias (install.ps1 writes .cmd and extensionless shims, the bash installer
+ * under Git Bash links or copies an .exe), the canonical binary, and the .exe.old copies
+ * install.ps1 moves aside when an exe is locked, each unless it is the one running (`binary` can be a copied alias). Empty outside
  * ~/.altimate/bin, so an unrelated `altimate-code` in a shared directory such as ~/.local/bin is
  * never named for removal.
  */
@@ -37,11 +40,25 @@ export function installerSiblingFiles(binary: string, platform: NodeJS.Platform)
   if (paths.basename(binDir) !== "bin" || paths.basename(paths.dirname(binDir)) !== ".altimate") return []
   const names =
     platform === "win32"
-      ? ["altimate.exe", "altimate-code.cmd", "altimate-code", "altimate-code.exe", "altimate-code.exe.old"]
+      ? [
+          "altimate.exe",
+          "altimate.exe.old",
+          "altimate-code.cmd",
+          "altimate-code",
+          "altimate-code.exe",
+          "altimate-code.exe.old",
+        ]
       : ["altimate", "altimate-code", "altimate-code.exe"]
   // Windows file names are case-insensitive; POSIX ones are not.
   const running = platform === "win32" ? paths.basename(binary).toLowerCase() : paths.basename(binary)
   return names.filter((name) => name !== running).map((name) => paths.join(binDir, name))
+}
+
+/** A command that removes `file` in the shell the platform's installer runs in. */
+export function removeFileCommand(file: string, platform: NodeJS.Platform, force = false): string {
+  // install.ps1 is a PowerShell one-liner; neither cmd.exe nor PowerShell runs `rm -f`.
+  if (platform === "win32") return `Remove-Item -LiteralPath "${file}" -Force`
+  return `rm${force ? " -f" : ""} "${file}"`
 }
 // altimate_change end
 
@@ -176,8 +193,19 @@ async function collectRemovalTargets(args: UninstallArgs, method: Installation.M
 
   const shellConfig = method === "curl" ? await getShellConfigFile() : null
   const binary = method === "curl" ? process.execPath : null
+  // altimate_change start — a real directory at one of those names is not the installer's (it
+  // skips them), so it is left out
+  const installerFiles: string[] = []
+  for (const file of binary ? installerSiblingFiles(binary, process.platform) : []) {
+    const present = await fs.lstat(file).then(
+      (stat) => !stat.isDirectory(),
+      () => false,
+    )
+    if (present) installerFiles.push(file)
+  }
 
-  return { directories, shellConfig, binary }
+  return { directories, shellConfig, binary, installerFiles }
+  // altimate_change end
 }
 
 // altimate_change start — #1305: takes the verified package name so the summary prints the
@@ -204,6 +232,11 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
   if (targets.binary) {
     prompts.log.info(`  ✓ Binary: ${shortenPath(targets.binary)}`)
   }
+  // altimate_change start — the installer files are removed by hand too, so preview them
+  for (const file of targets.installerFiles) {
+    prompts.log.info(`  ✓ Installer file: ${shortenPath(file)}`)
+  }
+  // altimate_change end
 
   if (targets.shellConfig) {
     prompts.log.info(`  ✓ Shell PATH in ${shortenPath(targets.shellConfig)}`)
@@ -304,19 +337,14 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
   if (method === "curl" && targets.binary) {
     UI.empty()
     prompts.log.message("To finish removing the binary, run:")
-    prompts.log.info(`  rm "${targets.binary}"`)
-
-    const binDir = path.dirname(targets.binary)
-    // altimate_change start — also name the installer's other files that exist beside the binary;
-    // a real directory at one of those names is not the installer's (it skips them), so it is left out
-    for (const file of installerSiblingFiles(targets.binary, process.platform)) {
-      const present = await fs.lstat(file).then(
-        (stat) => !stat.isDirectory(),
-        () => false,
-      )
-      if (present) prompts.log.info(`  rm -f "${file}"`)
+    // altimate_change start — platform-native commands, plus the installer's other files
+    prompts.log.info(`  ${removeFileCommand(targets.binary, process.platform)}`)
+    for (const file of targets.installerFiles) {
+      prompts.log.info(`  ${removeFileCommand(file, process.platform, true)}`)
     }
     // altimate_change end
+
+    const binDir = path.dirname(targets.binary)
     if (binDir.includes(".opencode")) {
       prompts.log.info(`  rmdir "${binDir}" 2>/dev/null`)
     }

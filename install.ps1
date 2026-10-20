@@ -44,9 +44,12 @@ function Write-Err($msg) { Write-Host "error: $msg" -ForegroundColor Red }
 # which all ship both names. Shims instead of a copy or link: they follow the
 # binary across upgrades (which rename the running exe aside) and need no symlink
 # privilege. cmd.exe and PowerShell resolve the .cmd; Git Bash and other MSYS
-# shells only resolve the extensionless script, the same pair npm writes. A stray
-# altimate-code.exe would win over the .cmd through PATHEXT order and could run a
-# stale build, so it is moved out of the way.
+# shells only resolve the extensionless script. npm also writes a .ps1 shim, left
+# out here because an execution policy that blocks scripts would break the name.
+# Like every .cmd shim, the .cmd hands its arguments to cmd.exe, which expands
+# %VAR% and interprets unquoted & | < > ^; scripts should call `altimate`.
+# A stray altimate-code.exe would win over the .cmd through PATHEXT order and
+# could run a stale build, so it is moved out of the way.
 #
 # Best-effort: a failure here warns and never aborts the install.
 function Install-Alias {
@@ -58,18 +61,14 @@ function Install-Alias {
     $shadowingExe = [IO.Path]::Combine($Dir, "altimate-code.exe")
     Remove-Item -LiteralPath "$shadowingExe.old" -Force -ErrorAction SilentlyContinue
 
-    $shims = [ordered]@{
-      "altimate-code.cmd" = "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
-      "altimate-code"     = "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n"
-    }
-    # Shims first: if one cannot be written, an existing altimate-code.exe stays usable.
-    # Each shim replaces an existing file or link instead of writing through it, so a link
-    # at its path can never overwrite the file it points to; GetAttributes does not follow
-    # links, so a dangling one is caught too. Each entry is replaced just before its own
-    # write, so a failure leaves the shims not yet reached as they were. A real directory
-    # is left alone and the write fails into the catch.
-    foreach ($name in $shims.Keys) {
-      $path = [IO.Path]::Combine($Dir, $name)
+    # Replaces an existing file or link instead of writing through it, so a link at the
+    # shim's path can never overwrite the file it points to; GetAttributes does not follow
+    # links, so a dangling one is caught too. The old entry is deleted before the write,
+    # so a failed write leaves no shim of that name. A real directory is left alone and
+    # the write throws into the catch.
+    $writeShim = {
+      param([string]$Name, [string]$Text)
+      $path = [IO.Path]::Combine($Dir, $Name)
       $attrs = $null
       try { $attrs = [IO.File]::GetAttributes($path) } catch {}
       if ($null -ne $attrs) {
@@ -77,8 +76,14 @@ function Install-Alias {
         if ($isDir -and ($attrs -band [IO.FileAttributes]::ReparsePoint)) { [IO.Directory]::Delete($path) }
         elseif (-not $isDir) { [IO.File]::Delete($path) }
       }
-      [IO.File]::WriteAllText($path, $shims[$name], [Text.Encoding]::ASCII)
+      [IO.File]::WriteAllText($path, $Text, [Text.Encoding]::ASCII)
     }
+
+    # The .cmd first, and the exe that would shadow it goes only once it exists: if it
+    # cannot be written, an existing altimate-code.exe stays usable. `altimate-code
+    # upgrade` run through the .cmd rewrites it while cmd.exe is still reading it by byte
+    # offset, which is safe only while its content stays byte-identical.
+    & $writeShim "altimate-code.cmd" "@echo off`r`n`"%~dp0altimate.exe`" %*`r`nexit /b %ERRORLEVEL%`r`n"
 
     if (Test-Path -LiteralPath $shadowingExe -PathType Leaf) {
       try { Remove-Item -LiteralPath $shadowingExe -Force } catch {
@@ -86,9 +91,21 @@ function Install-Alias {
         Move-Item -LiteralPath $shadowingExe -Destination "$shadowingExe.old" -Force
       }
     }
+
+    & $writeShim "altimate-code" "#!/bin/sh`nexec `"`$(dirname `"`$0`")/altimate.exe`" `"`$@`"`n"
   } catch {
     Write-Muted "Could not create the altimate-code alias in ${Dir}: $($_.Exception.Message)"
   }
+}
+
+# Whether $Path names a file directly in $Dir. Compared as full paths, ignoring case and
+# a trailing separator, since a PATH entry can spell the directory differently.
+function Test-PathInDir {
+  param([string]$Path, [string]$Dir)
+
+  $separators = [char[]]@('\', '/')
+  $parent = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path)).TrimEnd($separators)
+  return $parent -eq [IO.Path]::GetFullPath($Dir).TrimEnd($separators)
 }
 
 function Show-Usage {
@@ -264,7 +281,7 @@ if ($probe) {
     # A standalone install from before the alias existed still gets it, but only when
     # the matching binary is the one in $InstallDir, so the alias never runs a different
     # version than the one just checked.
-    if ([IO.Path]::GetDirectoryName($probe) -eq $InstallDir) {
+    if (Test-PathInDir -Path $probe -Dir $InstallDir) {
       Install-Alias -Dir $InstallDir
     }
     exit 0

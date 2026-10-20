@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { installerSiblingFiles } from "../../src/cli/cmd/uninstall"
+import { installerSiblingFiles, removeFileCommand } from "../../src/cli/cmd/uninstall"
 
 describe("uninstall — installer files beside the binary", () => {
   test("names the alias next to a standalone unix install", () => {
@@ -12,6 +12,7 @@ describe("uninstall — installer files beside the binary", () => {
 
   test("names every Windows alias form next to altimate.exe", () => {
     expect(installerSiblingFiles("C:\\Users\\u\\.altimate\\bin\\altimate.exe", "win32")).toEqual([
+      "C:\\Users\\u\\.altimate\\bin\\altimate.exe.old",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.exe",
@@ -22,6 +23,7 @@ describe("uninstall — installer files beside the binary", () => {
   test("names the canonical binary when running from a copied alias", () => {
     expect(installerSiblingFiles("C:\\Users\\u\\.altimate\\bin\\ALTIMATE-CODE.EXE", "win32")).toEqual([
       "C:\\Users\\u\\.altimate\\bin\\altimate.exe",
+      "C:\\Users\\u\\.altimate\\bin\\altimate.exe.old",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code",
       "C:\\Users\\u\\.altimate\\bin\\altimate-code.exe.old",
@@ -40,5 +42,23 @@ describe("uninstall — installer files beside the binary", () => {
     expect(installerSiblingFiles("/home/u/.local/bin/altimate", "linux")).toEqual([])
     expect(installerSiblingFiles("/home/u/.opencode/bin/altimate", "linux")).toEqual([])
     expect(installerSiblingFiles("/home/u/.altimate/not-bin/altimate", "linux")).toEqual([])
+  })
+})
+
+describe("uninstall — removal commands", () => {
+  test("Windows gets a PowerShell command that runs where install.ps1 does", () => {
+    expect(removeFileCommand("C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd", "win32", true)).toBe(
+      'Remove-Item -LiteralPath "C:\\Users\\u\\.altimate\\bin\\altimate-code.cmd" -Force',
+    )
+    expect(removeFileCommand("C:\\Users\\u\\.altimate\\bin\\altimate.exe", "win32")).toBe(
+      'Remove-Item -LiteralPath "C:\\Users\\u\\.altimate\\bin\\altimate.exe" -Force',
+    )
+  })
+
+  test("POSIX keeps rm, with -f only when asked", () => {
+    expect(removeFileCommand("/home/u/.altimate/bin/altimate", "linux")).toBe('rm "/home/u/.altimate/bin/altimate"')
+    expect(removeFileCommand("/home/u/.altimate/bin/altimate-code", "darwin", true)).toBe(
+      'rm -f "/home/u/.altimate/bin/altimate-code"',
+    )
   })
 })
